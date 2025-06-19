@@ -1,4 +1,4 @@
-#!/usr/bin/env bun
+#!/usr/bin/env node
 
 /**
  * PM2 Configuration for WordPress Sharp Image Processing
@@ -12,7 +12,7 @@ module.exports = {
 			name: 'wp-sharp-image',
 			script: 'index.js',
 			interpreter: 'bun',
-			cwd: '/Users/bordoni/stellar/wp/dev/wp-sharp-image',
+			cwd: '{{WORKING_DIRECTORY}}',
 			instances: 1,
 			exec_mode: 'fork',
 			autorestart: true,

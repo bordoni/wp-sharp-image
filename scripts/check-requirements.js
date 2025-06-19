@@ -47,7 +47,7 @@ class RequirementsChecker {
 		await this.checkDiskSpace();
 		await this.checkImageLibraries();
 		await this.checkFilePermissions();
-		await this.checkDatabase();
+		await this.checkWpCli();
 
 		this.printResults();
 		
@@ -183,19 +183,20 @@ class RequirementsChecker {
 	}
 
 	/**
-	 * Check database connectivity
+	 * Check wp-cli availability
 	 * 
 	 * @since TBD
 	 * 
 	 * @return {Promise<void>}
 	 */
-	async checkDatabase() {
-		// Check if MySQL/MariaDB client is available
+	async checkWpCli() {
+		// Check if wp-cli is available
 		try {
-			const { stdout } = await execAsync('mysql --version');
-			this.addResult('MySQL Client', true, 'Available');
+			const { stdout } = await execAsync('wp --version');
+			const version = stdout.trim().split(' ')[1]; // Extract version number
+			this.addResult('WP-CLI', true, `Version ${version}`);
 		} catch (error) {
-			this.addResult('MySQL Client', false, 'Not found - database access may still work');
+			this.addResult('WP-CLI', false, 'Not found - required for WordPress integration');
 		}
 	}
 

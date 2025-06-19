@@ -1,13 +1,13 @@
 [Unit]
 Description=WordPress Sharp Image Processing Service
-After=network.target mysql.service
+After=network.target
 Wants=network.target
 
 [Service]
 Type=simple
-User=www-data
-Group=www-data
-WorkingDirectory=/Users/bordoni/stellar/wp/dev/wp-sharp-image
+User={{SERVICE_USER}}
+Group={{SERVICE_GROUP}}
+WorkingDirectory={{WORKING_DIRECTORY}}
 ExecStart=/usr/local/bin/bun run start
 ExecReload=/bin/kill -HUP $MAINPID
 Restart=always
@@ -23,8 +23,8 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/Users/bordoni/stellar/wp/wp-content/uploads
-ReadWritePaths=/Users/bordoni/stellar/wp/dev/wp-sharp-image/logs
+ReadWritePaths={{UPLOADS_DIRECTORY}}
+ReadWritePaths={{WORKING_DIRECTORY}}/logs
 
 # Resource limits
 LimitNOFILE=65536

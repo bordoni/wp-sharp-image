@@ -128,23 +128,18 @@ bun run start
 #### Using PM2
 ```bash
 npm install -g pm2
-pm2 start index.js --name wp-sharp-image --interpreter bun
+cp supervisor/pm2.config.cjs ecosystem.config.cjs
+# Edit ecosystem.config.cjs to update paths
+pm2 start ecosystem.config.cjs --env production
 pm2 save
 pm2 startup
 ```
 
 #### Using Supervisor
-Create `/etc/supervisor/conf.d/wp-sharp-image.conf`:
-```ini
-[program:wp-sharp-image]
-command=bun run start
-directory=/path/to/dev/wp-sharp-image
-user=www-data
-autostart=true
-autorestart=true
-stderr_logfile=/var/log/wp-sharp-image.err.log
-stdout_logfile=/var/log/wp-sharp-image.out.log
-environment=NODE_ENV=production
+```bash
+sudo cp supervisor/supervisor.conf /etc/supervisor/conf.d/wp-sharp-image.conf
+# Edit the configuration file to update paths and user
+sudo nano /etc/supervisor/conf.d/wp-sharp-image.conf
 ```
 
 Then reload supervisor:
@@ -155,23 +150,10 @@ sudo supervisorctl start wp-sharp-image
 ```
 
 #### Using systemd
-Create `/etc/systemd/system/wp-sharp-image.service`:
-```ini
-[Unit]
-Description=WordPress Sharp Image Processing Service
-After=network.target
-
-[Service]
-Type=simple
-User=www-data
-WorkingDirectory=/path/to/dev/wp-sharp-image
-ExecStart=/usr/local/bin/bun run start
-Restart=always
-RestartSec=10
-Environment=NODE_ENV=production
-
-[Install]
-WantedBy=multi-user.target
+```bash
+sudo cp supervisor/systemd.service /etc/systemd/system/wp-sharp-image.service
+# Edit the service file to update paths and user
+sudo nano /etc/systemd/system/wp-sharp-image.service
 ```
 
 Enable and start the service:

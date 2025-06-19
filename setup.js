@@ -246,7 +246,7 @@ class SetupManager {
 				console.log('\n📋 Creating configuration file...');
 				await fs.copy(exampleConfigPath, configPath);
 				console.log('✅ Created config.js from config.example.js');
-				console.log('⚠️  Please edit config.js with your database credentials and paths');
+				console.log('⚠️  Please edit config.js with your WordPress installation paths');
 			} else {
 				throw new Error('config.example.js not found');
 			}
@@ -365,14 +365,10 @@ class SetupManager {
 			let configContent = await fs.readFile(templatePath, 'utf8');
 
 			// Replace placeholders with actual paths
-			configContent = configContent.replace(
-				'/Users/bordoni/stellar/wp/dev/wp-sharp-image',
-				this.workingDir
-			);
-
-			// Adjust user based on system
 			const user = this.userInfo.username === 'root' ? 'www-data' : this.userInfo.username;
-			configContent = configContent.replace('user=www-data', `user=${user}`);
+			configContent = configContent
+				.replace(/{{WORKING_DIRECTORY}}/g, this.workingDir)
+				.replace(/{{SERVICE_USER}}/g, user);
 
 			// Write the configuration
 			console.log('📝 Writing supervisor configuration...');
@@ -418,15 +414,14 @@ class SetupManager {
 			let configContent = await fs.readFile(templatePath, 'utf8');
 
 			// Replace placeholders with actual paths
-			configContent = configContent
-				.replace(/\/Users\/bordoni\/stellar\/wp\/dev\/wp-sharp-image/g, this.workingDir)
-				.replace(/\/Users\/bordoni\/stellar\/wp\/wp-content\/uploads/g, 
-					path.resolve(this.workingDir, '../../wp-content/uploads'));
-
-			// Adjust user based on system
 			const user = this.userInfo.username === 'root' ? 'www-data' : this.userInfo.username;
-			configContent = configContent.replace(/User=www-data/g, `User=${user}`);
-			configContent = configContent.replace(/Group=www-data/g, `Group=${user}`);
+			const uploadsPath = path.resolve(this.workingDir, '../../wp-content/uploads');
+			
+			configContent = configContent
+				.replace(/{{WORKING_DIRECTORY}}/g, this.workingDir)
+				.replace(/{{UPLOADS_DIRECTORY}}/g, uploadsPath)
+				.replace(/{{SERVICE_USER}}/g, user)
+				.replace(/{{SERVICE_GROUP}}/g, user);
 
 			// Write the configuration
 			console.log('📝 Writing systemd service file...');
@@ -469,17 +464,14 @@ class SetupManager {
 	async configurePM2(serviceInfo) {
 		try {
 			// Read the template
-			const templatePath = path.join(this.workingDir, 'supervisor', 'pm2.config.js');
+			const templatePath = path.join(this.workingDir, 'supervisor', 'pm2.config.cjs');
 			let configContent = await fs.readFile(templatePath, 'utf8');
 
 			// Replace placeholders with actual paths
-			configContent = configContent.replace(
-				'/Users/bordoni/stellar/wp/dev/wp-sharp-image',
-				this.workingDir
-			);
+			configContent = configContent.replace(/{{WORKING_DIRECTORY}}/g, this.workingDir);
 
-			// Write the configuration
-			const configPath = path.join(this.workingDir, 'ecosystem.config.js');
+			// Write the configuration as .cjs file
+			const configPath = path.join(this.workingDir, 'ecosystem.config.cjs');
 			console.log('📝 Writing PM2 configuration...');
 			await fs.writeFile(configPath, configContent);
 			console.log(`✅ Configuration written to ${configPath}`);
@@ -504,9 +496,9 @@ class SetupManager {
 		} catch (error) {
 			console.error('❌ PM2 setup failed:', error.message);
 			console.log('\n🔧 Manual setup instructions:');
-			console.log('1. Copy supervisor/pm2.config.js to ecosystem.config.js');
+			console.log('1. Copy supervisor/pm2.config.cjs to ecosystem.config.cjs');
 			console.log('2. Update paths in the configuration file');
-			console.log('3. Run: pm2 start ecosystem.config.js --env production');
+			console.log('3. Run: pm2 start ecosystem.config.cjs --env production');
 			console.log('4. Save: pm2 save');
 			console.log('5. Startup: pm2 startup');
 		}
@@ -549,8 +541,8 @@ class SetupManager {
 		
 		if (this.processManagers.pm2.available) {
 			console.log('\n   PM2:');
-			console.log('   cp supervisor/pm2.config.js ecosystem.config.js');
-			console.log('   pm2 start ecosystem.config.js --env production');
+			console.log('   cp supervisor/pm2.config.cjs ecosystem.config.cjs');
+			console.log('   pm2 start ecosystem.config.cjs --env production');
 			console.log('   pm2 save && pm2 startup');
 		}
 	}

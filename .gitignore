@@ -104,4 +104,5 @@ Thumbs.db
 
 # PM2 files
 pm2.json
-ecosystem.config.js 
+ecosystem.config.js
+ecosystem.config.cjs

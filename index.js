@@ -270,6 +270,8 @@ class WordPressSharpImageApp {
 			// Process the image
 			const metadata = await this.imageProcessor.processImage(filePath);
 			
+
+			logger.info('handleNewImage', metadata);
 			if (metadata) {
 				// Get attachment ID from database
 				const relativePath = path.relative(this.config.wordpress.uploadsPath, filePath);

@@ -82,12 +82,44 @@ Copy `config.example.js` to `config.js` and modify according to your setup:
 ### WordPress Integration
 The system uses wp-cli to interact with WordPress, so no database credentials are needed. WP-CLI uses WordPress's own database configuration from `wp-config.php`.
 
+#### WP-CLI Configuration
+You can pass additional arguments to all wp-cli commands via the `wpCliArgs` array:
+
+```javascript
+wordpress: {
+    // ... other settings
+    wpCliArgs: [
+        '--url=example.com',        // Required for multisite
+        '--user=admin',             // Run commands as specific user
+        '--skip-plugins',           // Skip plugin loading for performance
+        '--skip-themes',            // Skip theme loading for performance
+        '--debug',                  // Enable wp-cli debug output
+        '--quiet',                  // Suppress informational messages
+        '--allow-root'              // Allow running as root user
+    ]
+}
+```
+
+**Common Use Cases:**
+- **Multisite**: Add `--url=your-site.com` to target specific site
+- **Performance**: Add `--skip-plugins` and `--skip-themes` to speed up commands
+- **Debugging**: Add `--debug` for detailed wp-cli output
+- **Production**: Add `--quiet` to reduce log verbosity
+
 ### WordPress Paths
 ```javascript
 wordpress: {
     rootPath: '/path/to/wordpress',
     uploadsPath: '/path/to/wordpress/wp-content/uploads',
-    contentPath: '/path/to/wordpress/wp-content'
+    contentPath: '/path/to/wordpress/wp-content',
+    
+    // Additional wp-cli arguments (optional)
+    wpCliArgs: [
+        '--url=example.com',     // For multisite
+        '--user=admin',          // Run as specific user
+        '--skip-plugins',        // Skip plugin loading for performance
+        '--quiet'                // Suppress informational messages
+    ]
 }
 ```
 

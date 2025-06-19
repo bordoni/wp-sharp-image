@@ -41,6 +41,15 @@ export class Database {
 	wpCliCommand = null;
 
 	/**
+	 * Additional wp-cli arguments
+	 * 
+	 * @since TBD
+	 * 
+	 * @type {Array<string>}
+	 */
+	wpCliArgs = [];
+
+	/**
 	 * Constructor
 	 * 
 	 * @since TBD
@@ -49,7 +58,31 @@ export class Database {
 	 */
 	constructor(config) {
 		this.wordpressPath = config.wordpress.rootPath;
-		this.wpCliCommand = `wp --path="${this.wordpressPath}"`;
+		this.wpCliArgs = config.wordpress.wpCliArgs || [];
+		
+		// Build wp-cli command with additional arguments
+		const baseCommand = `wp --path="${this.wordpressPath}"`;
+		const additionalArgs = this.wpCliArgs.length > 0 ? ` ${this.wpCliArgs.join(' ')}` : '';
+		this.wpCliCommand = baseCommand + additionalArgs;
+		
+		logger.debug('wp-cli command configured:', {
+			basePath: this.wordpressPath,
+			additionalArgs: this.wpCliArgs,
+			fullCommand: this.wpCliCommand
+		});
+	}
+
+	/**
+	 * Build wp-cli command with additional arguments
+	 * 
+	 * @since TBD
+	 * 
+	 * @param {string} command The wp-cli command (without 'wp' prefix).
+	 * 
+	 * @return {string} Complete wp-cli command with all arguments.
+	 */
+	buildWpCliCommand(command) {
+		return `${this.wpCliCommand} ${command}`;
 	}
 
 	/**
@@ -62,14 +95,23 @@ export class Database {
 	async connect() {
 		try {
 			// Test wp-cli availability and WordPress installation
-			const { stdout } = await execAsync(`${this.wpCliCommand} core version`);
+			const command = this.buildWpCliCommand('core version');
+			logger.debug(`Testing wp-cli connectivity with command: ${command}`);
+			
+			const { stdout } = await execAsync(command);
 			const wpVersion = stdout.trim();
 			
 			logger.info(`WordPress connection established (version: ${wpVersion})`);
+			logger.debug('wp-cli configuration validated:', {
+				version: wpVersion,
+				args: this.wpCliArgs
+			});
+			
 			return true;
 		} catch (error) {
 			logger.error('WordPress connection failed:', error.message);
 			logger.error('Make sure wp-cli is installed and WordPress path is correct');
+			logger.debug('Failed wp-cli command:', this.wpCliCommand);
 			return false;
 		}
 	}
@@ -178,9 +220,10 @@ export class Database {
 	 */
 	async getAttachmentMeta(attachmentId) {
 		try {
-			const { stdout } = await execAsync(
-				`${this.wpCliCommand} post meta get ${attachmentId} _wp_attachment_metadata --format=json`
-			);
+			const command = this.buildWpCliCommand(`post meta get ${attachmentId} _wp_attachment_metadata --format=json`);
+			logger.debug(`Getting attachment metadata with command: ${command}`);
+			
+			const { stdout } = await execAsync(command);
 
 			const metadata = JSON.parse(stdout.trim());
 			logger.debug(`Retrieved metadata for attachment ${attachmentId}:`, metadata);
@@ -206,10 +249,10 @@ export class Database {
 	async updateAttachmentMeta(attachmentId, metadata) {
 		try {
 			const metadataJson = JSON.stringify(metadata).replace(/"/g, '\\"');
+			const command = this.buildWpCliCommand(`post meta update ${attachmentId} _wp_attachment_metadata '${metadataJson}'`);
+			logger.debug(`Updating attachment metadata with command: ${command}`);
 			
-			await execAsync(
-				`${this.wpCliCommand} post meta update ${attachmentId} _wp_attachment_metadata '${metadataJson}'`
-			);
+			await execAsync(command);
 			
 			logger.debug(`Updated metadata for attachment ${attachmentId}`);
 			return true;
@@ -231,26 +274,59 @@ export class Database {
 	 */
 	async getAttachmentIdByPath(filePath) {
 		try {
-			// Get table prefix first
-			const { stdout: prefix } = await execAsync(`${this.wpCliCommand} config get table_prefix`);
-			const tablePrefix = prefix.trim();
+			// Try the alternative method first (doesn't require MySQL client)
+			logger.debug(`Attempting to find attachment using wp-cli post list for path: ${filePath}`);
+			const attachmentId = await this.findAttachmentByPath(filePath);
+			if (attachmentId) {
+				logger.debug(`Found attachment ID ${attachmentId} using post list method`);
+				return attachmentId;
+			}
 
-			// Use wp-cli to find attachment by file path  
-			const { stdout } = await execAsync(
-				`${this.wpCliCommand} db query "SELECT p.ID FROM ${tablePrefix}posts p INNER JOIN ${tablePrefix}postmeta pm ON p.ID = pm.post_id WHERE p.post_type = 'attachment' AND pm.meta_key = '_wp_attached_file' AND pm.meta_value = '${filePath}'" --skip-column-names`
-			);
+			// Fallback to direct database query if MySQL client is available
+			logger.debug(`Post list method failed, trying database query for path: ${filePath}`);
+			try {
+				// Get table prefix first
+				const { stdout: prefix } = await execAsync(`${this.wpCliCommand} config get table_prefix`);
+				const tablePrefix = prefix.trim();
 
-			const attachmentId = parseInt(stdout.trim());
-			
-			if (isNaN(attachmentId)) {
+				// Use wp-cli to find attachment by file path
+				const query = `SELECT p.ID FROM ${tablePrefix}posts p INNER JOIN ${tablePrefix}postmeta pm ON p.ID = pm.post_id WHERE p.post_type = 'attachment' AND pm.meta_key = '_wp_attached_file' AND pm.meta_value = '${filePath}'`;
+				logger.debug(`Executing database query for attachment lookup:`, {
+					filePath,
+					tablePrefix,
+					query
+				});
+				
+				const result = await execAsync(
+					`${this.wpCliCommand} db query "${query}" --skip-column-names`
+				);
+				
+				logger.debug(`Database query executed successfully`, {
+					stdout: result.stdout.trim(),
+					stderr: result.stderr || 'none'
+				});
+
+				const attachmentId = parseInt(result.stdout.trim());
+				
+				if (isNaN(attachmentId)) {
+					logger.debug(`No attachment found for path: ${filePath}`);
+					return null;
+				}
+
+				logger.debug(`Found attachment ID ${attachmentId} for path: ${filePath}`);
+				return attachmentId;
+
+			} catch (dbError) {
+				logger.warn(`Database query method failed (MySQL client may not be installed):`, {
+					error: dbError.message,
+					filePath,
+					suggestion: 'Install mysql-client or use wp-cli post list method only'
+				});
 				return null;
 			}
 
-			logger.debug(`Found attachment ID ${attachmentId} for path: ${filePath}`);
-			return attachmentId;
-
 		} catch (error) {
-			logger.debug(`Failed to get attachment ID for path ${filePath}:`, error.message);
+			logger.error(`All methods failed to get attachment ID for path ${filePath}:`, error.message);
 			return null;
 		}
 	}
@@ -266,27 +342,38 @@ export class Database {
 	 */
 	async findAttachmentByPath(filePath) {
 		try {
-			// Extract filename for search
-			const filename = path.basename(filePath);
+			logger.debug(`Searching for attachment with meta_value: ${filePath}`);
 			
-			// Search for attachment by filename
-			const { stdout } = await execAsync(
-				`${this.wpCliCommand} post list --post_type=attachment --meta_key=_wp_attached_file --meta_value=${filePath} --field=ID --format=csv`
-			);
+			// Search for attachment by exact file path match
+			const command = this.buildWpCliCommand(`post list --post_type=attachment --meta_key=_wp_attached_file --meta_value="${filePath}" --field=ID --format=csv`);
+			logger.debug(`Executing wp-cli command: ${command}`);
+			
+			const { stdout } = await execAsync(command);
 
-			const attachmentIds = stdout.trim().split('\n').filter(Boolean);
+			logger.debug(`wp-cli post list result:`, {
+				stdout: stdout.trim(),
+				hasResult: stdout.trim().length > 0
+			});
+
+			const attachmentIds = stdout.trim().split('\n').filter(Boolean).filter(id => id !== 'ID');
 			
 			if (attachmentIds.length === 0) {
+				logger.debug(`No attachment found with exact path match: ${filePath}`);
 				return null;
 			}
 
 			const attachmentId = parseInt(attachmentIds[0]);
-			logger.debug(`Found attachment ID ${attachmentId} for path: ${filePath}`);
 			
+			if (isNaN(attachmentId)) {
+				logger.debug(`Invalid attachment ID returned: ${attachmentIds[0]}`);
+				return null;
+			}
+			
+			logger.debug(`Found attachment ID ${attachmentId} for path: ${filePath}`);
 			return attachmentId;
 
 		} catch (error) {
-			logger.debug(`Failed to find attachment for path ${filePath}:`, error.message);
+			logger.debug(`wp-cli post list method failed for path ${filePath}:`, error);
 			return null;
 		}
 	}

@@ -79,27 +79,24 @@ class SharpImageProcessing {
 	 * @return void
 	 */
 	private static function disable_wp_image_processing() {
-		// Remove all intermediate image sizes.
-		add_filter( 'intermediate_image_sizes_advanced', '__return_empty_array', 99 );
-		
-		// Remove default image sizes.
-		add_filter( 'intermediate_image_sizes', '__return_empty_array', 99 );
-		
-		// Prevent WordPress from generating thumbnails on upload.
+		// Prevent WordPress from generating thumbnails on upload, but keep size definitions.
 		add_filter( 'wp_generate_attachment_metadata', [ __CLASS__, 'prevent_thumbnail_generation' ], 10, 2 );
 		
 		// Disable image editing.
 		add_filter( 'wp_image_editors', '__return_empty_array', 99 );
 		
-		// Remove image size options from media settings.
-		add_action( 'admin_init', [ __CLASS__, 'remove_image_size_settings' ] );
+		// Add admin notice about Sharp handling.
+		add_action( 'admin_init', [ __CLASS__, 'add_image_size_notice' ] );
 		
 		// Add custom image sizes handling.
 		add_filter( 'wp_get_attachment_image_src', [ __CLASS__, 'get_sharp_processed_image' ], 10, 4 );
+		
+		// Intercept intermediate size requests to provide Sharp URLs.
+		add_filter( 'image_get_intermediate_size', [ __CLASS__, 'get_sharp_intermediate_size' ], 10, 3 );
 	}
 
 	/**
-	 * Prevent WordPress from generating thumbnails
+	 * Prevent WordPress from generating thumbnails but create metadata
 	 * 
 	 * @since TBD
 	 * 
@@ -113,25 +110,55 @@ class SharpImageProcessing {
 			return $metadata;
 		}
 
-		// Let Sharp handle the processing - just return basic metadata.
 		$file = get_attached_file( $attachment_id );
 		
 		if ( ! $file || ! file_exists( $file ) ) {
 			return $metadata;
 		}
 
+		// Get actual image dimensions.
+		$image_size = getimagesize( $file );
+		if ( ! $image_size ) {
+			return $metadata;
+		}
+
 		$metadata = [
 			'file'   => _wp_relative_upload_path( $file ),
-			'width'  => 0,
-			'height' => 0,
+			'width'  => $image_size[0],
+			'height' => $image_size[1],
 			'sizes'  => [],
 		];
 
-		// Get actual image dimensions if possible.
-		$image_size = getimagesize( $file );
-		if ( $image_size ) {
-			$metadata['width']  = $image_size[0];
-			$metadata['height'] = $image_size[1];
+		// Create metadata entries for all registered image sizes (but don't generate files).
+		$registered_sizes = wp_get_registered_image_subsizes();
+		
+		foreach ( $registered_sizes as $size_name => $size_data ) {
+			if ( empty( $size_data['width'] ) && empty( $size_data['height'] ) ) {
+				continue;
+			}
+
+			// Calculate dimensions for this size.
+			$resized = image_resize_dimensions( 
+				$metadata['width'], 
+				$metadata['height'], 
+				$size_data['width'], 
+				$size_data['height'], 
+				$size_data['crop'] 
+			);
+
+			if ( $resized ) {
+				// Create a fake filename that Sharp will generate.
+				$path_info = pathinfo( $file );
+				$suffix = $resized[4] . 'x' . $resized[5];
+				$fake_filename = $path_info['filename'] . '-' . $suffix . '.' . $path_info['extension'];
+				
+				$metadata['sizes'][ $size_name ] = [
+					'file'   => $fake_filename,
+					'width'  => $resized[4],
+					'height' => $resized[5],
+					'mime-type' => get_post_mime_type( $attachment_id ),
+				];
+			}
 		}
 
 		return $metadata;
@@ -190,57 +217,34 @@ class SharpImageProcessing {
 	}
 
 	/**
-	 * Remove image size settings from WordPress admin
+	 * Add notice about Sharp image processing
 	 * 
 	 * @since TBD
 	 * 
 	 * @return void
 	 */
-	public static function remove_image_size_settings() {
-		// Use CSS to hide the image size settings since they can't be easily removed.
-		add_action( 'admin_head', [ __CLASS__, 'hide_image_size_settings_css' ] );
-		
-		// Override the settings to prevent them from working.
-		add_filter( 'pre_option_thumbnail_size_w', '__return_zero' );
-		add_filter( 'pre_option_thumbnail_size_h', '__return_zero' );
-		add_filter( 'pre_option_thumbnail_crop', '__return_zero' );
-		add_filter( 'pre_option_medium_size_w', '__return_zero' );
-		add_filter( 'pre_option_medium_size_h', '__return_zero' );
-		add_filter( 'pre_option_large_size_w', '__return_zero' );
-		add_filter( 'pre_option_large_size_h', '__return_zero' );
-		
-		// Add notice about disabled settings.
+	public static function add_image_size_notice() {
+		// Add notice about Sharp handling on media settings page.
 		add_action( 'load-options-media.php', [ __CLASS__, 'add_media_options_notice' ] );
+		
+		// Add visual indicators with CSS.
+		add_action( 'admin_head', [ __CLASS__, 'add_image_size_indicators_css' ] );
 	}
 
 	/**
-	 * Hide image size settings with CSS
+	 * Add visual indicators to image size settings
 	 * 
 	 * @since TBD
 	 * 
 	 * @return void
 	 */
-	public static function hide_image_size_settings_css() {
+	public static function add_image_size_indicators_css() {
 		if ( ! self::is_media_settings_page() ) {
 			return;
 		}
 		?>
 		<style type="text/css">
-		.form-table tr:has(th[scope="row"] label[for*="thumbnail_size"]),
-		.form-table tr:has(th[scope="row"] label[for*="medium_size"]),
-		.form-table tr:has(th[scope="row"] label[for*="large_size"]) {
-			display: none !important;
-		}
-		/* Fallback for older browsers that don't support :has() */
-		.form-table tr th label[for="thumbnail_size_w"],
-		.form-table tr th label[for="thumbnail_size_h"], 
-		.form-table tr th label[for="thumbnail_crop"],
-		.form-table tr th label[for="medium_size_w"],
-		.form-table tr th label[for="medium_size_h"],
-		.form-table tr th label[for="large_size_w"],
-		.form-table tr th label[for="large_size_h"] {
-			opacity: 0.3;
-		}
+		/* Add visual indicators that Sharp is handling these sizes */
 		.form-table tr th label[for="thumbnail_size_w"]:after,
 		.form-table tr th label[for="thumbnail_size_h"]:after,
 		.form-table tr th label[for="thumbnail_crop"]:after,
@@ -248,9 +252,18 @@ class SharpImageProcessing {
 		.form-table tr th label[for="medium_size_h"]:after,
 		.form-table tr th label[for="large_size_w"]:after,
 		.form-table tr th label[for="large_size_h"]:after {
-			content: " (Disabled by Sharp Image Processing)";
-			color: #dc3232;
+			content: " (Generated by Sharp)";
+			color: #0073aa;
 			font-style: italic;
+			font-weight: normal;
+		}
+		
+		/* Add a subtle background to indicate Sharp processing */
+		.form-table tr:has(th[scope="row"] label[for*="thumbnail_size"]),
+		.form-table tr:has(th[scope="row"] label[for*="medium_size"]),
+		.form-table tr:has(th[scope="row"] label[for*="large_size"]) {
+			background-color: #f0f8ff;
+			border-left: 3px solid #0073aa;
 		}
 		</style>
 		<?php
@@ -276,7 +289,7 @@ class SharpImageProcessing {
 	 */
 	public static function show_media_options_notice() {
 		echo '<div class="notice notice-info">';
-		echo '<p><strong>Sharp Image Processing:</strong> Image size settings are disabled because Sharp service handles all image processing automatically.</p>';
+		echo '<p><strong>Sharp Image Processing:</strong> Image size settings are active and define the sizes that will be generated by the Sharp service. WordPress will not generate these sizes - Sharp handles all image processing automatically for better performance.</p>';
 		echo '</div>';
 	}
 
@@ -290,6 +303,44 @@ class SharpImageProcessing {
 	private static function is_media_settings_page() {
 		$screen = get_current_screen();
 		return $screen && 'options-media' === $screen->id;
+	}
+
+	/**
+	 * Get Sharp processed intermediate size data
+	 * 
+	 * @since TBD
+	 * 
+	 * @param array|false  $data         Array of intermediate image data or false.
+	 * @param int          $attachment_id Image attachment ID.
+	 * @param string|array $size         Requested image size.
+	 * 
+	 * @return array|false Modified intermediate size data or false.
+	 */
+	public static function get_sharp_intermediate_size( $data, $attachment_id, $size ) {
+		if ( ! self::is_image_attachment( $attachment_id ) ) {
+			return $data;
+		}
+
+		// If WordPress already has data, modify it to point to Sharp files.
+		if ( ! empty( $data ) && is_array( $data ) ) {
+			$file = get_attached_file( $attachment_id );
+			if ( ! $file ) {
+				return $data;
+			}
+
+			$upload_dir = wp_upload_dir();
+			$file_dir = dirname( $file );
+			$sharp_filename = $data['file'];
+			$sharp_path = $file_dir . '/' . $sharp_filename;
+
+			// Update the data to point to Sharp-processed file.
+			$data['path'] = str_replace( $upload_dir['basedir'] . '/', '', $sharp_path );
+			$data['url'] = str_replace( $upload_dir['basedir'], $upload_dir['baseurl'], $sharp_path );
+
+			return $data;
+		}
+
+		return $data;
 	}
 
 	/**

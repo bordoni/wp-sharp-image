@@ -26,7 +26,25 @@ export default {
 	wordpress: {
 		rootPath: '/srv/www/wp.dev',
 		uploadsPath: '/srv/www/wp.dev/wp-content/uploads',
-		contentPath: '/srv/www/wp.dev/wp-content'
+		contentPath: '/srv/www/wp.dev/wp-content',
+
+		/**
+		 * Additional wp-cli arguments
+		 * 
+		 * These arguments will be added to all wp-cli commands.
+		 * Useful for multisite, custom configurations, etc.
+		 * 
+		 * @since TBD
+		 */
+		wpCliArgs: [
+			// Examples:
+			// '--url=example.com',           // For multisite
+			// '--user=admin',                // Run as specific user
+			// '--skip-plugins',              // Skip plugin loading
+			// '--skip-themes',               // Skip theme loading
+			// '--debug',                     // Enable wp-cli debug mode
+			// '--quiet',                     // Suppress informational messages
+		]
 	},
 
 	/**

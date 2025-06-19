@@ -29,9 +29,9 @@ export default {
 	 * @since TBD
 	 */
 	wordpress: {
-		rootPath: '/Users/bordoni/stellar/wp',
-		uploadsPath: '/Users/bordoni/stellar/wp/wp-content/uploads',
-		contentPath: '/Users/bordoni/stellar/wp/wp-content'
+		rootPath: '/srv/www/wp.dev',
+		uploadsPath: '/srv/www/wp.dev/wp-content/uploads',
+		contentPath: '/srv/www/wp.dev/wp-content'
 	},
 
 	/**

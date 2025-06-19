@@ -25,7 +25,7 @@ High-performance image processing for WordPress using Sharp and Bun. This module
 
 1. **Navigate to the module directory**:
    ```bash
-   cd dev/wp-sharp-image
+   cd wp-sharp-image
    ```
 
 2. **Install dependencies**:

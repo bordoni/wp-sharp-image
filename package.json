@@ -1,0 +1,42 @@
+{
+  "name": "wp-sharp-image",
+  "version": "1.0.0",
+  "description": "High-performance image processing for WordPress using Sharp and Bun",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "start": "bun run index.js",
+    "dev": "bun run --watch index.js",
+    "test": "bun test",
+    "lint": "eslint *.js",
+    "setup": "bun install && bun run setup.js",
+    "configure": "bun run setup.js",
+    "check": "bun run scripts/check-requirements.js",
+    "status": "bun run scripts/service-status.js"
+  },
+  "dependencies": {
+    "sharp": "^0.33.4",
+    "mysql2": "^3.9.7",
+    "chokidar": "^3.6.0",
+    "dotenv": "^16.4.5",
+    "winston": "^3.13.0",
+    "path": "^0.12.7",
+    "fs-extra": "^11.2.0"
+  },
+  "devDependencies": {
+    "eslint": "^8.57.0",
+    "@types/node": "^20.12.7"
+  },
+  "engines": {
+    "bun": ">=1.0.0"
+  },
+  "keywords": [
+    "wordpress",
+    "image-processing",
+    "sharp",
+    "bun",
+    "performance"
+  ],
+  "author": "Gustavo Bordoni",
+  "license": "GPL-2.0+"
+} 

@@ -1,0 +1,34 @@
+[Unit]
+Description=WordPress Sharp Image Processing Service
+After=network.target mysql.service
+Wants=network.target
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/Users/bordoni/stellar/wp/dev/wp-sharp-image
+ExecStart=/usr/local/bin/bun run start
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=always
+RestartSec=10
+RestartPreventExitStatus=0
+TimeoutSec=600
+Environment=NODE_ENV=production
+KillMode=mixed
+KillSignal=SIGTERM
+
+# Security settings
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/Users/bordoni/stellar/wp/wp-content/uploads
+ReadWritePaths=/Users/bordoni/stellar/wp/dev/wp-sharp-image/logs
+
+# Resource limits
+LimitNOFILE=65536
+LimitNPROC=32768
+
+[Install]
+WantedBy=multi-user.target 

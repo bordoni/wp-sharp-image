@@ -16,7 +16,6 @@
   },
   "dependencies": {
     "sharp": "^0.33.4",
-    "mysql2": "^3.9.7",
     "chokidar": "^3.6.0",
     "dotenv": "^16.4.5",
     "winston": "^3.13.0",

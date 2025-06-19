@@ -173,9 +173,7 @@ class WordPressSharpImageApp {
 	 */
 	validateConfiguration() {
 		const required = [
-			'database.host',
-			'database.user',
-			'database.database',
+			'wordpress.rootPath',
 			'wordpress.uploadsPath'
 		];
 
@@ -190,26 +188,30 @@ class WordPressSharpImageApp {
 		if (!fs.existsSync(this.config.wordpress.uploadsPath)) {
 			throw new Error(`Uploads path does not exist: ${this.config.wordpress.uploadsPath}`);
 		}
+
+		if (!fs.existsSync(this.config.wordpress.rootPath)) {
+			throw new Error(`WordPress root path does not exist: ${this.config.wordpress.rootPath}`);
+		}
 	}
 
 	/**
-	 * Initialize database connection
+	 * Initialize WordPress data access via wp-cli
 	 * 
 	 * @since TBD
 	 * 
 	 * @return {Promise<void>}
 	 */
 	async initializeDatabase() {
-		logger.info('Initializing database connection...');
+		logger.info('Initializing WordPress data access via wp-cli...');
 
-		this.database = new Database(this.config.database);
+		this.database = new Database(this.config);
 		
 		const connected = await this.database.connect();
 		if (!connected) {
-			throw new Error('Failed to connect to database');
+			throw new Error('Failed to connect to WordPress via wp-cli. Make sure wp-cli is installed and WordPress path is correct.');
 		}
 
-		logger.info('Database connection established');
+		logger.info('WordPress data access established');
 	}
 
 	/**
@@ -438,7 +440,7 @@ class WordPressSharpImageApp {
 			await this.fileWatcher.stopWatching();
 		}
 
-		// Close database connection
+		// Close WordPress data access
 		if (this.database) {
 			await this.database.disconnect();
 		}

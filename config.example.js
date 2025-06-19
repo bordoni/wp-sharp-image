@@ -10,18 +10,13 @@
 
 export default {
 	/**
-	 * Database configuration - matches wp-config.php
+	 * WordPress Configuration
+	 * 
+	 * Database access is handled via wp-cli, which uses WordPress's own
+	 * database configuration. No database credentials are needed here.
 	 * 
 	 * @since TBD
 	 */
-	database: {
-		host: 'localhost',
-		user: 'root',
-		password: 'root',
-		database: 'dev.tec',
-		charset: 'utf8',
-		prefix: 'wp_'
-	},
 
 	/**
 	 * WordPress installation paths

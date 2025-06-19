@@ -3,92 +3,91 @@
 /**
  * WordPress Database utilities for Sharp Image Processing
  * 
- * Handles database operations for retrieving WordPress image sizes,
- * attachment metadata, and other WordPress-specific data.
+ * Handles WordPress data operations using wp-cli for safe and reliable
+ * interaction with WordPress database and configuration.
  * 
  * @since TBD
  */
 
-import mysql from 'mysql2/promise';
+import { exec } from 'child_process';
+import { promisify } from 'util';
+import path from 'path';
 import { logger } from './Logger.js';
 
+const execAsync = promisify(exec);
+
 /**
- * WordPress Database class
+ * WordPress Database class using wp-cli
  * 
  * @since TBD
  */
 export class Database {
 	/**
-	 * Database connection
+	 * WordPress root path
 	 * 
 	 * @since TBD
 	 * 
-	 * @type {mysql.Connection}
+	 * @type {string}
 	 */
-	connection = null;
+	wordpressPath = null;
 
 	/**
-	 * Database configuration
+	 * wp-cli command prefix
 	 * 
 	 * @since TBD
 	 * 
-	 * @type {Object}
+	 * @type {string}
 	 */
-	config = null;
+	wpCliCommand = null;
 
 	/**
 	 * Constructor
 	 * 
 	 * @since TBD
 	 * 
-	 * @param {Object} config Database configuration object.
+	 * @param {Object} config Configuration object with WordPress path.
 	 */
 	constructor(config) {
-		this.config = config;
+		this.wordpressPath = config.wordpress.rootPath;
+		this.wpCliCommand = `wp --path="${this.wordpressPath}"`;
 	}
 
 	/**
-	 * Connect to the database
+	 * Test wp-cli connectivity and WordPress installation
 	 * 
 	 * @since TBD
 	 * 
-	 * @return {Promise<boolean>} True if connection successful.
+	 * @return {Promise<boolean>} True if wp-cli and WordPress are accessible.
 	 */
 	async connect() {
 		try {
-			this.connection = await mysql.createConnection({
-				host: this.config.host,
-				user: this.config.user,
-				password: this.config.password,
-				database: this.config.database,
-				charset: this.config.charset
-			});
-
-			logger.info('Database connection established');
+			// Test wp-cli availability and WordPress installation
+			const { stdout } = await execAsync(`${this.wpCliCommand} core version`);
+			const wpVersion = stdout.trim();
+			
+			logger.info(`WordPress connection established (version: ${wpVersion})`);
 			return true;
 		} catch (error) {
-			logger.error('Database connection failed:', error.message);
+			logger.error('WordPress connection failed:', error.message);
+			logger.error('Make sure wp-cli is installed and WordPress path is correct');
 			return false;
 		}
 	}
 
 	/**
-	 * Disconnect from the database
+	 * Disconnect (no-op for wp-cli)
 	 * 
 	 * @since TBD
 	 * 
 	 * @return {Promise<void>}
 	 */
 	async disconnect() {
-		if (this.connection) {
-			await this.connection.end();
-			this.connection = null;
-			logger.info('Database connection closed');
-		}
+		// No persistent connection to close with wp-cli
+		logger.debug('WordPress connection closed (wp-cli mode)');
 	}
 
 	/**
-	 * Get WordPress image sizes from options table
+	 * Get WordPress image sizes from options and theme
 	 * 
 	 * @since TBD
 	 * 
@@ -96,48 +95,61 @@ export class Database {
 	 */
 	async getImageSizes() {
 		try {
-			const query = `
-				SELECT option_value 
-				FROM ${this.config.prefix}options 
-				WHERE option_name IN ('thumbnail_size_w', 'thumbnail_size_h', 'thumbnail_crop',
-									 'medium_size_w', 'medium_size_h', 
-									 'medium_large_size_w', 'medium_large_size_h',
-									 'large_size_w', 'large_size_h')
-			`;
-
-			const [rows] = await this.connection.execute(query);
-			
-			// Also get custom image sizes from theme options
-			const customSizesQuery = `
-				SELECT option_value 
-				FROM ${this.config.prefix}options 
-				WHERE option_name = '_wp_additional_image_sizes'
-			`;
-
-			const [customRows] = await this.connection.execute(customSizesQuery);
+			// Get core image size settings
+			const [thumbnailW, thumbnailH, thumbnailCrop, mediumW, mediumH, largeW, largeH] = await Promise.all([
+				this.getOption('thumbnail_size_w', '150'),
+				this.getOption('thumbnail_size_h', '150'),
+				this.getOption('thumbnail_crop', '1'),
+				this.getOption('medium_size_w', '300'),
+				this.getOption('medium_size_h', '300'),
+				this.getOption('large_size_w', '1024'),
+				this.getOption('large_size_h', '1024')
+			]);
 
 			// Build image sizes object
 			const imageSizes = {
-				thumbnail: { width: 150, height: 150, crop: true },
-				medium: { width: 300, height: 300, crop: false },
-				medium_large: { width: 768, height: 0, crop: false },
-				large: { width: 1024, height: 1024, crop: false }
+				thumbnail: {
+					width: parseInt(thumbnailW) || 150,
+					height: parseInt(thumbnailH) || 150,
+					crop: thumbnailCrop === '1'
+				},
+				medium: {
+					width: parseInt(mediumW) || 300,
+					height: parseInt(mediumH) || 300,
+					crop: false
+				},
+				large: {
+					width: parseInt(largeW) || 1024,
+					height: parseInt(largeH) || 1024,
+					crop: false
+				}
 			};
 
-			// Parse WordPress options
-			for (const row of rows) {
-				// This would need proper implementation based on actual option structure
-				// For now, we'll use defaults
+			// Get additional image sizes from theme
+			try {
+				const additionalSizes = await this.getOption('_wp_additional_image_sizes', '');
+				if (additionalSizes) {
+					const customSizes = JSON.parse(additionalSizes);
+					Object.assign(imageSizes, customSizes);
+				}
+			} catch (error) {
+				logger.debug('No additional image sizes found or failed to parse');
 			}
 
-			// Parse custom image sizes if they exist
-			if (customRows.length > 0 && customRows[0].option_value) {
-				try {
-					const customSizes = JSON.parse(customRows[0].option_value);
-					Object.assign(imageSizes, customSizes);
-				} catch (error) {
-					logger.warn('Failed to parse custom image sizes:', error.message);
+			// Get sizes registered by themes/plugins
+			try {
+				const { stdout } = await execAsync(`${this.wpCliCommand} eval "echo json_encode(wp_get_additional_image_sizes());"`);
+				const additionalSizes = JSON.parse(stdout.trim());
+				
+				for (const [name, size] of Object.entries(additionalSizes)) {
+					imageSizes[name] = {
+						width: parseInt(size.width) || 0,
+						height: parseInt(size.height) || 0,
+						crop: Boolean(size.crop)
+					};
 				}
+			} catch (error) {
+				logger.debug('Could not retrieve additional theme image sizes');
 			}
 
 			logger.debug('Retrieved image sizes:', imageSizes);
@@ -146,18 +158,17 @@ export class Database {
 		} catch (error) {
 			logger.error('Failed to get image sizes:', error.message);
 			
-			// Return default WordPress image sizes
+			// Return safe defaults
 			return {
 				thumbnail: { width: 150, height: 150, crop: true },
 				medium: { width: 300, height: 300, crop: false },
-				medium_large: { width: 768, height: 0, crop: false },
 				large: { width: 1024, height: 1024, crop: false }
 			};
 		}
 	}
 
 	/**
-	 * Get attachment metadata from database
+	 * Get attachment metadata using wp-cli
 	 * 
 	 * @since TBD
 	 * 
@@ -167,31 +178,23 @@ export class Database {
 	 */
 	async getAttachmentMeta(attachmentId) {
 		try {
-			const query = `
-				SELECT meta_value 
-				FROM ${this.config.prefix}postmeta 
-				WHERE post_id = ? AND meta_key = '_wp_attachment_metadata'
-			`;
+			const { stdout } = await execAsync(
+				`${this.wpCliCommand} post meta get ${attachmentId} _wp_attachment_metadata --format=json`
+			);
 
-			const [rows] = await this.connection.execute(query, [attachmentId]);
-			
-			if (rows.length === 0) {
-				return null;
-			}
-
-			const metadata = JSON.parse(rows[0].meta_value);
+			const metadata = JSON.parse(stdout.trim());
 			logger.debug(`Retrieved metadata for attachment ${attachmentId}:`, metadata);
 			
 			return metadata;
 
 		} catch (error) {
-			logger.error(`Failed to get attachment metadata for ID ${attachmentId}:`, error.message);
+			logger.debug(`No metadata found for attachment ${attachmentId}: ${error.message}`);
 			return null;
 		}
 	}
 
 	/**
-	 * Update attachment metadata in database
+	 * Update attachment metadata using wp-cli
 	 * 
 	 * @since TBD
 	 * 
@@ -202,14 +205,11 @@ export class Database {
 	 */
 	async updateAttachmentMeta(attachmentId, metadata) {
 		try {
-			const query = `
-				UPDATE ${this.config.prefix}postmeta 
-				SET meta_value = ? 
-				WHERE post_id = ? AND meta_key = '_wp_attachment_metadata'
-			`;
-
-			const metadataJson = JSON.stringify(metadata);
-			await this.connection.execute(query, [metadataJson, attachmentId]);
+			const metadataJson = JSON.stringify(metadata).replace(/"/g, '\\"');
+			
+			await execAsync(
+				`${this.wpCliCommand} post meta update ${attachmentId} _wp_attachment_metadata '${metadataJson}'`
+			);
 			
 			logger.debug(`Updated metadata for attachment ${attachmentId}`);
 			return true;
@@ -221,7 +221,7 @@ export class Database {
 	}
 
 	/**
-	 * Get attachment ID by file path
+	 * Get attachment ID by file path using wp-cli
 	 * 
 	 * @since TBD
 	 * 
@@ -231,72 +231,198 @@ export class Database {
 	 */
 	async getAttachmentIdByPath(filePath) {
 		try {
-			const query = `
-				SELECT p.ID 
-				FROM ${this.config.prefix}posts p
-				INNER JOIN ${this.config.prefix}postmeta pm ON p.ID = pm.post_id
-				WHERE p.post_type = 'attachment' 
-				AND pm.meta_key = '_wp_attached_file' 
-				AND pm.meta_value = ?
-			`;
+			// Get table prefix first
+			const { stdout: prefix } = await execAsync(`${this.wpCliCommand} config get table_prefix`);
+			const tablePrefix = prefix.trim();
 
-			const [rows] = await this.connection.execute(query, [filePath]);
+			// Use wp-cli to find attachment by file path  
+			const { stdout } = await execAsync(
+				`${this.wpCliCommand} db query "SELECT p.ID FROM ${tablePrefix}posts p INNER JOIN ${tablePrefix}postmeta pm ON p.ID = pm.post_id WHERE p.post_type = 'attachment' AND pm.meta_key = '_wp_attached_file' AND pm.meta_value = '${filePath}'" --skip-column-names`
+			);
+
+			const attachmentId = parseInt(stdout.trim());
 			
-			if (rows.length === 0) {
+			if (isNaN(attachmentId)) {
 				return null;
 			}
 
-			const attachmentId = parseInt(rows[0].ID);
 			logger.debug(`Found attachment ID ${attachmentId} for path: ${filePath}`);
-			
 			return attachmentId;
 
 		} catch (error) {
-			logger.error(`Failed to get attachment ID for path ${filePath}:`, error.message);
+			logger.debug(`Failed to get attachment ID for path ${filePath}:`, error.message);
 			return null;
 		}
 	}
 
 	/**
-	 * Check if database connection is alive
+	 * Get attachment ID by file path using wp-cli media command (alternative method)
 	 * 
 	 * @since TBD
 	 * 
-	 * @return {Promise<boolean>} True if connection is alive.
+	 * @param {string} filePath The relative file path from uploads directory.
+	 * 
+	 * @return {Promise<number|null>} Attachment ID or null if not found.
 	 */
-	async isConnected() {
-		if (!this.connection) {
-			return false;
-		}
-
+	async findAttachmentByPath(filePath) {
 		try {
-			await this.connection.ping();
-			return true;
+			// Extract filename for search
+			const filename = path.basename(filePath);
+			
+			// Search for attachment by filename
+			const { stdout } = await execAsync(
+				`${this.wpCliCommand} post list --post_type=attachment --meta_key=_wp_attached_file --meta_value=${filePath} --field=ID --format=csv`
+			);
+
+			const attachmentIds = stdout.trim().split('\n').filter(Boolean);
+			
+			if (attachmentIds.length === 0) {
+				return null;
+			}
+
+			const attachmentId = parseInt(attachmentIds[0]);
+			logger.debug(`Found attachment ID ${attachmentId} for path: ${filePath}`);
+			
+			return attachmentId;
+
 		} catch (error) {
-			logger.warn('Database connection lost:', error.message);
+			logger.debug(`Failed to find attachment for path ${filePath}:`, error.message);
+			return null;
+		}
+	}
+
+	/**
+	 * Get WordPress option value using wp-cli
+	 * 
+	 * @since TBD
+	 * 
+	 * @param {string} optionName    The option name.
+	 * @param {string} defaultValue  Default value if option doesn't exist.
+	 * 
+	 * @return {Promise<string>} Option value or default.
+	 */
+	async getOption(optionName, defaultValue = '') {
+		try {
+			const { stdout } = await execAsync(
+				`${this.wpCliCommand} option get ${optionName}`
+			);
+
+			return stdout.trim();
+
+		} catch (error) {
+			logger.debug(`Option ${optionName} not found, using default: ${defaultValue}`);
+			return defaultValue;
+		}
+	}
+
+	/**
+	 * Set WordPress option value using wp-cli
+	 * 
+	 * @since TBD
+	 * 
+	 * @param {string} optionName  The option name.
+	 * @param {string} optionValue The option value.
+	 * 
+	 * @return {Promise<boolean>} True if update successful.
+	 */
+	async setOption(optionName, optionValue) {
+		try {
+			await execAsync(
+				`${this.wpCliCommand} option update ${optionName} '${optionValue}'`
+			);
+
+			logger.debug(`Updated option ${optionName}`);
+			return true;
+
+		} catch (error) {
+			logger.error(`Failed to update option ${optionName}:`, error.message);
 			return false;
 		}
 	}
 
 	/**
-	 * Reconnect to database if connection is lost
+	 * Check if wp-cli and WordPress are accessible
+	 * 
+	 * @since TBD
+	 * 
+	 * @return {Promise<boolean>} True if accessible.
+	 */
+	async isConnected() {
+		try {
+			await execAsync(`${this.wpCliCommand} core version`);
+			return true;
+		} catch (error) {
+			return false;
+		}
+	}
+
+	/**
+	 * Test WordPress connectivity (alias for isConnected)
 	 * 
 	 * @since TBD
 	 * 
 	 * @return {Promise<boolean>} True if reconnection successful.
 	 */
 	async reconnect() {
-		logger.info('Attempting to reconnect to database...');
-		
-		if (this.connection) {
-			try {
-				await this.connection.end();
-			} catch (error) {
-				// Ignore errors when closing dead connection
-			}
-			this.connection = null;
-		}
+		logger.info('Testing WordPress connectivity via wp-cli...');
+		return await this.isConnected();
+	}
 
-		return await this.connect();
+	/**
+	 * Get WordPress uploads directory info
+	 * 
+	 * @since TBD
+	 * 
+	 * @return {Promise<Object|null>} Uploads directory info or null if failed.
+	 */
+	async getUploadsInfo() {
+		try {
+			const { stdout } = await execAsync(
+				`${this.wpCliCommand} eval "echo json_encode(wp_upload_dir());"`
+			);
+
+			const uploadsInfo = JSON.parse(stdout.trim());
+			logger.debug('Retrieved uploads directory info:', uploadsInfo);
+			
+			return uploadsInfo;
+
+		} catch (error) {
+			logger.error('Failed to get uploads directory info:', error.message);
+			return null;
+		}
+	}
+
+	/**
+	 * Get WordPress configuration info
+	 * 
+	 * @since TBD
+	 * 
+	 * @return {Promise<Object>} WordPress configuration details.
+	 */
+	async getWordPressInfo() {
+		try {
+			const [version, siteUrl, homeUrl, uploadsInfo] = await Promise.all([
+				execAsync(`${this.wpCliCommand} core version`),
+				execAsync(`${this.wpCliCommand} option get siteurl`),
+				execAsync(`${this.wpCliCommand} option get home`),
+				this.getUploadsInfo()
+			]);
+
+			return {
+				version: version.stdout.trim(),
+				siteUrl: siteUrl.stdout.trim(),
+				homeUrl: homeUrl.stdout.trim(),
+				uploads: uploadsInfo
+			};
+
+		} catch (error) {
+			logger.error('Failed to get WordPress info:', error.message);
+			return {
+				version: 'Unknown',
+				siteUrl: 'Unknown',
+				homeUrl: 'Unknown',
+				uploads: null
+			};
+		}
 	}
 } 

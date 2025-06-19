@@ -17,7 +17,7 @@ High-performance image processing for WordPress using Sharp and Bun. This module
 - **Bun**: >= 1.0.0
 - **Node.js**: 18.17.0+ (for dependencies)
 - **WordPress**: 5.0+
-- **MySQL/MariaDB**: Access to WordPress database
+- **WP-CLI**: Latest version (for WordPress integration)
 
 ## Installation
 
@@ -63,7 +63,7 @@ High-performance image processing for WordPress using Sharp and Bun. This module
    cp config.example.js config.js
    ```
    
-   Edit `config.js` with your WordPress database credentials and paths.
+   Edit `config.js` with your WordPress installation paths.
 
 4. **Test the configuration**:
    ```bash
@@ -79,17 +79,8 @@ High-performance image processing for WordPress using Sharp and Bun. This module
 
 Copy `config.example.js` to `config.js` and modify according to your setup:
 
-### Database Configuration
-```javascript
-database: {
-    host: 'localhost',
-    user: 'root',
-    password: 'root',
-    database: 'your_wordpress_db',
-    charset: 'utf8',
-    prefix: 'wp_'
-}
-```
+### WordPress Integration
+The system uses wp-cli to interact with WordPress, so no database credentials are needed. WP-CLI uses WordPress's own database configuration from `wp-config.php`.
 
 ### WordPress Paths
 ```javascript
@@ -168,7 +159,7 @@ Create `/etc/systemd/system/wp-sharp-image.service`:
 ```ini
 [Unit]
 Description=WordPress Sharp Image Processing Service
-After=network.target mysql.service
+After=network.target
 
 [Service]
 Type=simple
@@ -230,7 +221,7 @@ dev/wp-sharp-image/
 ├── config.js                # Your configuration (gitignored)
 ├── README.md                # This file
 ├── src/
-│   ├── Database.js          # WordPress database operations
+│   ├── Database.js          # WordPress data access via wp-cli
 │   ├── ImageProcessor.js    # Sharp image processing logic
 │   ├── FileWatcher.js       # File system monitoring
 │   ├── Logger.js            # Logging utilities
